@@ -1,0 +1,20 @@
+# Python virtual environment
+.venv/
+venv/
+ENV/
+
+# Python cache & compiled bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+*.log
+
+# Large machine learning model assets (auto-downloaded by tracker.py on first run)
+models/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+desktop.ini
