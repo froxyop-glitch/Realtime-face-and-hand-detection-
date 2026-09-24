@@ -77,21 +77,32 @@ Outputs complete JSON packets per frame containing face coordinates, age distrib
 
 A complete 720p 3D-perspective arcade racing game built on top of the MoCap and Age detection pipeline!
 
-### Controls & Gesture Mechanics
-- **Virtual Steering Wheel**: Hold both hands up in the air as if gripping a steering wheel and tilt left/right. The game computes $\theta = \arctan2(\Delta y, \Delta x)$ between your wrists to turn your car with precision. (Single-hand horizontal offset also supported!)
-- **Accelerate (Gas)**: Open Palm (🖐)
-- **Brake / Reverse**: Clench Fist (✊)
-- **Nitro Boost**: Thumbs Up (👍) or Peace Sign (✌)
-- **Drift / Power Slide**: Pinch Fingers (🤏)
+### 🕹️ One-Hand Driving & Gesture Mechanics
+- **Single-Hand Steering (Default)**: Drive with just **ONE HAND**! Tilt your hand left/right (rotational $\theta = \arctan2(\Delta x, -\Delta y)$) or move your hand horizontally across the webcam frame. Both tilt and lateral translation blend smoothly for ultra-responsive steering.
+- **Dual-Hand Steering (Optional)**: Switch to two-handed steering anytime by pressing `M`.
+- **Accelerate (Gas)**: Open Palm (🖐) on your driving hand.
+- **Brake / Slow Down**: Clench Fist (✊) on your driving hand.
+- **Nitro Boost**: Thumbs Up (👍) or Peace Sign (✌) on your driving hand.
+- **Drift / Power Slide**: Pinch Fingers (🤏).
 - **Keyboard Fallback**: `A` / `D` or Arrow keys to steer, `W` for gas, `S` for brake, `Space` for Nitro.
-- **Restart**: Press `R` or flash an Open Palm when crashed.
-- **Exit**: Press `Q`.
+
+### 📋 Side Controls Panel & Hotkeys
+- **Live Cockpit Sidebar**: Left-hand translucent cyberpunk panel displaying:
+  - Active Driving Mode (`1-HAND DRIVE [ACTIVE]`)
+  - Live Steering Gauge bar with angle ($\theta$) and % offset
+  - Real-time gesture checklist with glowing `[ACTIVE]` indicator badges
+  - Keyboard backup shortcuts
+- **Hotkeys**:
+  - `[C]` : Toggle Controls Side Panel on / off
+  - `[M]` : Switch between 1-Hand Driving and 2-Hands Driving
+  - `[R]` : Restart Game (or flash Open Palm on crash screen)
+  - `[Q]` : Quit CyberDrive
 
 ### Features
 - **Dynamic 3D-Perspective Highway**: Curved roads, hill crests, horizon glow, and asphalt markings.
 - **AI Traffic Vehicles**: Sports cars, muscle cars, and trucks navigating lanes.
 - **Bonus Collectibles**: Gold Coins (+100 pts), Nitro Canisters (+35% boost), and Forcefield Shields (invulnerability).
-- **Interactive Holographic Steering Wheel**: 3D-rendered steering wheel rotates dynamically with your hand tilt angle.
+- **Interactive Holographic Steering Wheel**: 3D-rendered steering wheel rotates dynamically with your single-hand tilt angle.
 - **Live MoCap PiP Driver Display**: Picture-in-picture stream displaying your face, real-time age badge, hand skeletal bones, and active gesture telemetry.
 - **Particle System**: Exhaust flames, tire smoke on drifting, and sparks on collision.
 
@@ -104,4 +115,5 @@ A complete 720p 3D-perspective arcade racing game built on top of the MoCap and 
 cd C:\Users\shoho\.gemini\antigravity\scratch\motion_tracker
 .\.venv\Scripts\python.exe cargame.py
 ```
+
 

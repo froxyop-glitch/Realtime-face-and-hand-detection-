@@ -42,6 +42,12 @@ def test_simulation():
     game.prev_frame_time = 0.0
     game.fps = 30.0
 
+    game.driving_mode = "ONE_HAND"
+    game.show_controls_panel = True
+    game.last_detected_gesture = "OPEN_PALM"
+    game.hand_detected = True
+    game.hand_tilt_deg = 15.0
+
     canvas = np.zeros((720, 1280, 3), dtype=np.uint8)
 
     # Test projection with negative, zero, and boundary z values
@@ -60,19 +66,25 @@ def test_simulation():
         action = random.choice(actions)
         if action == "GAS":
             game.target_speed = 170.0
+            game.current_action = "GAS"
         elif action == "BRAKE":
             game.target_speed = 20.0  # Heavy braking -> causes relative negative speed
+            game.current_action = "BRAKE"
         elif action == "NITRO":
             game.target_speed = 240.0
+            game.current_action = "NITRO"
         elif action == "DRIFT":
             game.target_speed = 90.0
             game.is_drifting = True
+            game.current_action = "DRIFT"
         else:
             game.target_speed = 80.0
             game.is_drifting = False
+            game.current_action = "CRUISE"
 
         game.steer_input = random.uniform(-1.0, 1.0)
         game.steer_angle_deg = -game.steer_input * 30.0
+        game.hand_tilt_deg = game.steer_input * 25.0
 
         # Run physics update
         game.update(dt)
@@ -85,6 +97,7 @@ def test_simulation():
         game.render_traffic_and_collectibles(canvas)
         game.render_player_car(canvas)
         game.render_steering_wheel(canvas)
+        game.render_controls_sidebar(canvas)
 
     print(f"[Test] Successfully simulated 500 frames! Final score: {game.score}, Distance: {game.distance:.1f}m")
 

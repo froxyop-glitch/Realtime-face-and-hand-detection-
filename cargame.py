@@ -142,6 +142,11 @@ class CyberDriveGame:
         self.steer_angle_deg = 0.0
         self.current_action = "CRUISE" # GAS, BRAKE, NITRO, DRIFT, CRUISE
         self.driver_age_text = "Scanning..."
+        self.driving_mode = "ONE_HAND"  # "ONE_HAND" (default) or "TWO_HANDS"
+        self.show_controls_panel = True # Toggleable with 'C' key
+        self.last_detected_gesture = "NONE"
+        self.hand_detected = False
+        self.hand_tilt_deg = 0.0
 
         # 3. Environment & Road Simulation
         self.road_curve = 0.0
@@ -170,7 +175,8 @@ class CyberDriveGame:
     # --------------------------------------------------------------------------
     def process_controls(self, hands_data: List[Dict], face_data: Optional[Dict], key_code: int):
         """
-        Derive virtual steering wheel angle and pedals from hand coordinates and gestures.
+        Derive driving controls, steering angle, and pedals from hand coordinates and gestures.
+        Optimized for ONE-HAND driving (tilt + lateral movement) with keyboard fallback.
         """
         # Update driver age if available
         if face_data and face_data.get("age"):
@@ -179,11 +185,49 @@ class CyberDriveGame:
 
         raw_steer = 0.0
         angle_deg = 0.0
+        self.hand_detected = len(hands_data) > 0
 
-        # 1. Dual-Hand Virtual Steering Wheel
-        if len(hands_data) >= 2:
+        # ======================================================================
+        # 1. ONE-HAND DRIVING (Primary & Default)
+        # ======================================================================
+        if self.driving_mode == "ONE_HAND" and len(hands_data) >= 1:
+            h = hands_data[0]
+            wrist = h.get("wrist_abs", {"x": 0.5, "y": 0.5})
+            wx = wrist["x"]
+
+            # Calculate Hand Tilt Angle from Wrist (joint 0) to Middle MCP (joint 9)
+            tilt_deg = 0.0
+            if "joints_21" in h and len(h["joints_21"]) >= 10:
+                j_wrist = h["joints_21"][0]
+                j_middle = h["joints_21"][9]
+                dx = j_middle["x"] - j_wrist["x"]
+                dy = j_middle["y"] - j_wrist["y"]
+                # dy is negative when pointing upwards; -dy is positive
+                tilt_rad = math.atan2(dx, -dy)
+                tilt_deg = math.degrees(tilt_rad)
+                self.hand_tilt_deg = tilt_deg
+
+            # 1a. Tilt Steering component: tilt up to +-25 degrees = full lock
+            tilt_steer = tilt_deg / 25.0
+
+            # 1b. Position Steering component: lateral hand offset from center (0.50)
+            pos_steer = (wx - 0.50) / 0.18
+
+            # Blend tilt (65%) and lateral hand movement (35%)
+            raw_steer = 0.65 * tilt_steer + 0.35 * pos_steer
+            raw_steer = max(-1.0, min(1.0, raw_steer))
+
+            # Apply deadzone for relaxed straight driving
+            if abs(raw_steer) < 0.07:
+                raw_steer = 0.0
+
+            angle_deg = raw_steer * 30.0
+
+        # ======================================================================
+        # 2. TWO-HANDS DRIVING (Optional Mode)
+        # ======================================================================
+        elif self.driving_mode == "TWO_HANDS" and len(hands_data) >= 2:
             h1, h2 = hands_data[0], hands_data[1]
-            # Order hands from left to right on screen
             left_h = h1 if h1["wrist_abs"]["x"] < h2["wrist_abs"]["x"] else h2
             right_h = h2 if h1["wrist_abs"]["x"] < h2["wrist_abs"]["x"] else h1
 
@@ -194,45 +238,48 @@ class CyberDriveGame:
             dy = ry - ly
 
             if dx > 0.05:
-                # dy < 0 means right hand is higher -> turning clockwise (RIGHT)
                 angle_rad = math.atan2(dy, dx)
                 angle_deg = math.degrees(angle_rad)
-                # Normalize angle to steering input [-1.0, 1.0] (max lock at 35 degrees)
-                raw_steer = - (angle_deg / 32.0)
+                raw_steer = - (angle_deg / 30.0)
                 raw_steer = max(-1.0, min(1.0, raw_steer))
                 if abs(raw_steer) < 0.08:
                     raw_steer = 0.0
 
-        # 2. Single-Hand Steering (Horizontal Offset from Center)
-        elif len(hands_data) == 1:
+        elif self.driving_mode == "TWO_HANDS" and len(hands_data) == 1:
             h = hands_data[0]
-            hx = h["wrist_abs"]["x"]
-            # Center is 0.5; offset determines steering
-            raw_steer = (hx - 0.5) / 0.22
+            wx = h["wrist_abs"]["x"]
+            raw_steer = (wx - 0.50) / 0.20
             raw_steer = max(-1.0, min(1.0, raw_steer))
             if abs(raw_steer) < 0.08:
                 raw_steer = 0.0
-            angle_deg = - (raw_steer * 28.0)
+            angle_deg = raw_steer * 28.0
 
-        # 3. Keyboard Fallback
+        # ======================================================================
+        # 3. KEYBOARD FALLBACK (Always available)
+        # ======================================================================
         if key_code in [ord("a"), ord("A"), 81, 2424832]: # Left
-            raw_steer = -0.9
-            angle_deg = 25.0
+            raw_steer = -0.92
+            angle_deg = -28.0
         elif key_code in [ord("d"), ord("D"), 83, 2555904]: # Right
-            raw_steer = 0.9
-            angle_deg = -25.0
+            raw_steer = 0.92
+            angle_deg = 28.0
 
         # Smooth steering input
-        self.steer_input = 0.70 * self.steer_input + 0.30 * raw_steer
-        self.steer_angle_deg = 0.75 * self.steer_angle_deg + 0.25 * angle_deg
+        self.steer_input = 0.68 * self.steer_input + 0.32 * raw_steer
+        self.steer_angle_deg = 0.72 * self.steer_angle_deg + 0.28 * angle_deg
 
-        # 4. Action & Pedal Detection from Gestures
-        gestures = [h.get("gesture", "ACTIVE") for h in hands_data]
+        # ======================================================================
+        # 4. GESTURES & PEDALS FROM DRIVING HAND
+        # ======================================================================
+        active_gesture = "NONE"
+        if len(hands_data) > 0:
+            active_gesture = hands_data[0].get("gesture", "ACTIVE")
+        self.last_detected_gesture = active_gesture
 
-        is_nitro_active = any(g in ["THUMBS_UP", "SPIDERMAN", "PEACE"] for g in gestures)
-        is_braking = any(g == "FIST" for g in gestures)
-        is_drifting = any(g == "PINCH" for g in gestures)
-        is_gas = any(g == "OPEN_PALM" for g in gestures)
+        is_nitro_active = active_gesture in ["THUMBS_UP", "SPIDERMAN", "PEACE"]
+        is_braking = (active_gesture == "FIST")
+        is_drifting = (active_gesture == "PINCH")
+        is_gas = (active_gesture == "OPEN_PALM")
 
         # Keyboard pedals fallback
         if key_code in [32]: # Space
@@ -685,16 +732,26 @@ class CyberDriveGame:
             end_y = int(center_y + math.sin(total_rad) * wheel_radius)
             cv2.line(canvas, (center_x, center_y), (end_x, end_y), (255, 255, 255), 2, cv2.LINE_AA)
 
-        # Hand grip nodes (representing user's hand placements at 9 and 3 o'clock)
-        for grip_offset in [math.pi, 0]:
-            gx = int(center_x + math.cos(angle_rad + grip_offset) * (wheel_radius + 4))
-            gy = int(center_y + math.sin(angle_rad + grip_offset) * (wheel_radius + 4))
-            cv2.circle(canvas, (gx, gy), 6, (0, 255, 0), -1)
+        if self.driving_mode == "ONE_HAND":
+            # Single-hand grip marker positioned at top (12 o'clock) or wheel tilt angle
+            gx = int(center_x + math.cos(angle_rad - math.pi / 2) * (wheel_radius + 4))
+            gy = int(center_y + math.sin(angle_rad - math.pi / 2) * (wheel_radius + 4))
+            cv2.circle(canvas, (gx, gy), 7, (0, 255, 0), -1)
+            cv2.circle(canvas, (gx, gy), 9, (255, 255, 255), 1)
+            steer_label = f"1-HAND: {int(self.steer_angle_deg):+d}°"
+        else:
+            # Dual-hand grip nodes at 9 and 3 o'clock
+            for grip_offset in [math.pi, 0]:
+                gx = int(center_x + math.cos(angle_rad + grip_offset) * (wheel_radius + 4))
+                gy = int(center_y + math.sin(angle_rad + grip_offset) * (wheel_radius + 4))
+                cv2.circle(canvas, (gx, gy), 6, (0, 255, 0), -1)
+            steer_label = f"2-HANDS: {int(self.steer_angle_deg):+d}°"
 
         # Digital Steer Angle readout
+        (tw, _), _ = cv2.getTextSize(steer_label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
         cv2.putText(
-            canvas, f"{int(self.steer_angle_deg):+d}°",
-            (center_x - 18, center_y + wheel_radius + 20),
+            canvas, steer_label,
+            (center_x - tw // 2, center_y + wheel_radius + 20),
             cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1, cv2.LINE_AA
         )
 
@@ -765,6 +822,110 @@ class CyberDriveGame:
 
             cv2.putText(canvas, "LIVE DRIVER MOCAP", (pip_x + 5, pip_y + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 255, 128), 1, cv2.LINE_AA)
 
+    def render_controls_sidebar(self, canvas: np.ndarray):
+        """Render cyberpunk controls panel on the left side of the screen."""
+        if not self.show_controls_panel:
+            # Minimalist collapsed tab in top left
+            cv2.rectangle(canvas, (20, 65), (205, 95), (15, 15, 20), -1)
+            cv2.rectangle(canvas, (20, 65), (205, 95), (0, 255, 255), 1)
+            cv2.putText(canvas, "[C] CONTROLS OPTIONS", (28, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 255, 255), 1, cv2.LINE_AA)
+            return
+
+        x1, y1 = 20, 65
+        x2, y2 = 280, 575
+
+        # Translucent dark cyberpunk background
+        sub_canvas = canvas[y1:y2, x1:x2]
+        dark_bg = np.full_like(sub_canvas, (14, 16, 24))
+        canvas[y1:y2, x1:x2] = cv2.addWeighted(dark_bg, 0.84, sub_canvas, 0.16, 0)
+        cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 255, 255), 1)
+
+        # 1. Header & Mode Badge
+        cv2.rectangle(canvas, (x1, y1), (x2, y1 + 32), (25, 30, 45), -1)
+        cv2.line(canvas, (x1, y1 + 32), (x2, y1 + 32), (0, 255, 255), 1)
+        cv2.putText(canvas, "CONTROLS OPTIONS", (x1 + 10, y1 + 22), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 255, 255), 2, cv2.LINE_AA)
+
+        mode_name = "1-HAND DRIVE [ACTIVE]" if self.driving_mode == "ONE_HAND" else "2-HAND DRIVE [ACTIVE]"
+        badge_col = (0, 255, 128) if self.driving_mode == "ONE_HAND" else (0, 200, 255)
+        cv2.rectangle(canvas, (x1 + 10, y1 + 40), (x2 - 10, y1 + 64), (20, 35, 28), -1)
+        cv2.rectangle(canvas, (x1 + 10, y1 + 40), (x2 - 10, y1 + 64), badge_col, 1)
+        cv2.putText(canvas, mode_name, (x1 + 14, y1 + 57), cv2.FONT_HERSHEY_SIMPLEX, 0.42, badge_col, 1, cv2.LINE_AA)
+
+        # Hand Detection Status
+        hand_col = (0, 255, 0) if self.hand_detected else (0, 165, 255)
+        hand_txt = "● HAND DETECTED" if self.hand_detected else "○ SEARCHING HAND..."
+        cv2.putText(canvas, hand_txt, (x1 + 12, y1 + 82), cv2.FONT_HERSHEY_SIMPLEX, 0.42, hand_col, 1, cv2.LINE_AA)
+
+        # 2. Dynamic Steering Bar
+        cv2.putText(canvas, "STEERING GAUGE:", (x1 + 12, y1 + 104), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (200, 200, 200), 1, cv2.LINE_AA)
+        bar_x, bar_y, bar_w, bar_h = x1 + 12, y1 + 112, 236, 14
+        bar_mid = bar_x + bar_w // 2
+        cv2.rectangle(canvas, (bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h), (35, 40, 50), -1)
+        cv2.line(canvas, (bar_mid, bar_y - 2), (bar_mid, bar_y + bar_h + 2), (255, 255, 255), 1)
+
+        steer_fill = int(self.steer_input * (bar_w // 2))
+        if steer_fill < 0:
+            cv2.rectangle(canvas, (bar_mid + steer_fill, bar_y), (bar_mid, bar_y + bar_h), (0, 255, 255), -1)
+        elif steer_fill > 0:
+            cv2.rectangle(canvas, (bar_mid, bar_y), (bar_mid + steer_fill, bar_y + bar_h), (0, 255, 255), -1)
+
+        steer_pct = int(self.steer_input * 100)
+        steer_dir = "LEFT" if steer_pct < -5 else ("RIGHT" if steer_pct > 5 else "CENTER")
+        cv2.putText(canvas, f"Tilt: {self.hand_tilt_deg:+.0f}° | {steer_pct:+d}% {steer_dir}", (x1 + 12, y1 + 140), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 255), 1, cv2.LINE_AA)
+
+        # 3. One-Hand Gestures & Actions (with Live Highlight)
+        cv2.line(canvas, (x1 + 8, y1 + 150), (x2 - 8, y1 + 150), (50, 55, 70), 1)
+        cv2.putText(canvas, "ONE-HAND GESTURES:", (x1 + 12, y1 + 168), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 200, 255), 1, cv2.LINE_AA)
+
+        gestures_ui = [
+            ("OPEN PALM", "GAS / ACCEL", self.current_action == "GAS", (0, 255, 128)),
+            ("FIST", "BRAKE / SLOW", self.current_action == "BRAKE", (0, 0, 255)),
+            ("THUMBS UP", "NITRO BOOST", self.current_action == "NITRO", (0, 165, 255)),
+            ("PINCH", "DRIFT SLIDE", self.current_action == "DRIFT", (255, 0, 230)),
+            ("TILT / MOVE", "STEER L / R", abs(self.steer_input) > 0.15, (0, 255, 255)),
+        ]
+
+        item_y = y1 + 180
+        for g_name, g_action, is_active, color in gestures_ui:
+            if is_active:
+                cv2.rectangle(canvas, (x1 + 8, item_y), (x2 - 8, item_y + 22), (int(color[0] * 0.3), int(color[1] * 0.3), int(color[2] * 0.3)), -1)
+                cv2.rectangle(canvas, (x1 + 8, item_y), (x2 - 8, item_y + 22), color, 1)
+                tag = "[ACTIVE]"
+                tag_col = color
+            else:
+                cv2.rectangle(canvas, (x1 + 8, item_y), (x2 - 8, item_y + 22), (20, 22, 30), -1)
+                tag = ""
+                tag_col = (130, 130, 140)
+
+            cv2.putText(canvas, g_name, (x1 + 14, item_y + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(canvas, g_action, (x1 + 105, item_y + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.36, tag_col, 1, cv2.LINE_AA)
+            if tag:
+                cv2.putText(canvas, tag, (x2 - 58, item_y + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.32, tag_col, 1, cv2.LINE_AA)
+
+            item_y += 26
+
+        # 4. Keyboard Backup
+        cv2.line(canvas, (x1 + 8, item_y + 2), (x2 - 8, item_y + 2), (50, 55, 70), 1)
+        item_y += 18
+        cv2.putText(canvas, "KEYBOARD BACKUP:", (x1 + 12, item_y), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (200, 200, 200), 1, cv2.LINE_AA)
+        item_y += 16
+        cv2.putText(canvas, "A / D   : Steer Left / Right", (x1 + 12, item_y), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (170, 170, 170), 1, cv2.LINE_AA)
+        item_y += 16
+        cv2.putText(canvas, "W / S   : Gas / Brake", (x1 + 12, item_y), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (170, 170, 170), 1, cv2.LINE_AA)
+        item_y += 16
+        cv2.putText(canvas, "SPACE   : Nitro Boost", (x1 + 12, item_y), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (170, 170, 170), 1, cv2.LINE_AA)
+
+        # 5. Hotkeys & Options
+        cv2.line(canvas, (x1 + 8, item_y + 6), (x2 - 8, item_y + 6), (50, 55, 70), 1)
+        item_y += 22
+        cv2.putText(canvas, "OPTIONS & HOTKEYS:", (x1 + 12, item_y), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 200, 255), 1, cv2.LINE_AA)
+        item_y += 16
+        cv2.putText(canvas, "[C] Toggle Controls Sidebar", (x1 + 12, item_y), cv2.FONT_HERSHEY_SIMPLEX, 0.34, (255, 255, 0), 1, cv2.LINE_AA)
+        item_y += 15
+        cv2.putText(canvas, "[M] Switch 1-Hand / 2-Hands", (x1 + 12, item_y), cv2.FONT_HERSHEY_SIMPLEX, 0.34, (0, 255, 128), 1, cv2.LINE_AA)
+        item_y += 15
+        cv2.putText(canvas, "[R] Restart | [Q] Quit", (x1 + 12, item_y), cv2.FONT_HERSHEY_SIMPLEX, 0.34, (190, 190, 190), 1, cv2.LINE_AA)
+
     # --------------------------------------------------------------------------
     # Main Execution Loop
     # --------------------------------------------------------------------------
@@ -774,9 +935,9 @@ class CyberDriveGame:
         cv2.resizeWindow(window_title, self.WIDTH, self.HEIGHT)
 
         print("=" * 75)
-        print("Starting CyberDrive Arcade Racer")
-        print("Steer by rotating both hands | Open Palm = Gas | Fist = Brake | Thumbs Up = Nitro")
-        print("Focus the game window. Press 'r' to restart, 'q' to quit.")
+        print("Starting CyberDrive Arcade Racer (One-Hand Driving Edition)")
+        print("Tilt/Move 1 Hand to Steer | Palm = Gas | Fist = Brake | Thumbs Up = Nitro")
+        print("Press 'c' to toggle Controls HUD, 'm' for driving mode, 'r' restart, 'q' quit.")
         print("=" * 75)
 
         canvas = np.zeros((self.HEIGHT, self.WIDTH, 3), dtype=np.uint8)
@@ -824,6 +985,12 @@ class CyberDriveGame:
                     break
                 elif key == ord("r"):
                     self.reset_game()
+                elif key in [ord("c"), ord("C")]:
+                    self.show_controls_panel = not self.show_controls_panel
+                    self.set_notification(f"CONTROLS HUD: {'SHOWN' if self.show_controls_panel else 'HIDDEN'}")
+                elif key in [ord("m"), ord("M")]:
+                    self.driving_mode = "TWO_HANDS" if self.driving_mode == "ONE_HAND" else "ONE_HAND"
+                    self.set_notification(f"DRIVING MODE: {self.driving_mode.replace('_', ' ')}")
 
                 # Restart on Open Palm gesture if Game Over
                 if self.game_over and any(h.get("gesture") == "OPEN_PALM" for h in hands_data):
@@ -844,6 +1011,7 @@ class CyberDriveGame:
                 self.render_player_car(canvas)
                 self.render_steering_wheel(canvas)
                 self.render_hud(canvas, cam_frame)
+                self.render_controls_sidebar(canvas)
 
                 # 7. Display Game Window
                 cv2.imshow(window_title, canvas)
