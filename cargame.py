@@ -59,7 +59,7 @@ class TrafficCar:
     """AI traffic vehicle moving on the perspective road."""
     def __init__(self, lane: int, car_type: str = "sports"):
         self.lane = lane  # -1 (left), 0 (center), 1 (right)
-        self.z = 0.0      # 0.0 (far horizon) -> 1.0 (player level)
+        self.z = 0.05     # 0.05 (far horizon) -> 1.0 (player level)
         self.speed = random.uniform(0.18, 0.32)
         self.car_type = car_type
         
@@ -84,12 +84,12 @@ class Collectible:
     """Collectible bonuses along the track: Coins, Nitro, and Shield."""
     def __init__(self, lane: int, item_type: str = "coin"):
         self.lane = lane  # -1 (left), 0 (center), 1 (right)
-        self.z = 0.0
+        self.z = 0.05
         self.item_type = item_type
         self.collected = False
 
     def update(self, player_speed_factor: float, dt: float):
-        self.z += player_speed_factor * dt
+        self.z += max(0.05, player_speed_factor) * dt
 
 
 class CyberDriveGame:
@@ -366,9 +366,9 @@ class CyberDriveGame:
             if 0.98 <= car.z <= 1.05 and abs(car.lane * 0.7 - self.player_x) < 0.45:
                 self.score += 5
 
-            if car.z < 1.15:
+            if 0.01 <= car.z < 1.15:
                 remaining_traffic.append(car)
-            else:
+            elif car.z >= 1.15:
                 self.score += 50  # Successful overtake!
         self.traffic = remaining_traffic
 
@@ -394,7 +394,7 @@ class CyberDriveGame:
                         self._spawn_explosion(item_x, 560, (255, 0, 255), 25)
                     continue
 
-            if item.z < 1.15:
+            if 0.01 <= item.z < 1.15:
                 remaining_items.append(item)
         self.collectibles = remaining_items
 
@@ -501,18 +501,21 @@ class CyberDriveGame:
     # --------------------------------------------------------------------------
     def _project_road_pos(self, road_x: float, z: float, width: int = 60, height: int = 90) -> Tuple[int, int, int, int]:
         """Convert track coordinates (road_x: -1..1, z: 0..1) into 2D perspective screen coordinates."""
+        # Strictly clamp z to non-negative real range to prevent complex numbers on negative values
+        safe_z = max(0.0, min(1.3, float(z)))
         horizon_y = 260
         bottom_y = 700
-        py = int(horizon_y + (bottom_y - horizon_y) * (z ** 1.8))
+        z_pow = float(safe_z ** 1.8)
+        py = int(horizon_y + (bottom_y - horizon_y) * z_pow)
 
         # Scale expands as objects approach the camera
-        scale = 0.15 + (z ** 1.8) * 0.85
+        scale = 0.15 + z_pow * 0.85
         pw = int(width * scale)
         ph = int(height * scale)
 
         # Dynamic perspective road width
-        road_half_w = 70 + (430 - 70) * (z ** 1.8)
-        curve_offset = (z ** 2.0) * self.road_curve * 220
+        road_half_w = 70 + (430 - 70) * z_pow
+        curve_offset = (safe_z ** 2.0) * self.road_curve * 220
         px = int(self.WIDTH // 2 + (road_x * road_half_w) + curve_offset)
 
         return px, py, pw, ph
@@ -631,6 +634,9 @@ class CyberDriveGame:
         render_queue.sort(key=lambda obj: obj[0])
 
         for z, obj_type, obj in render_queue:
+            if z < 0.01 or z > 1.25:
+                continue
+
             if obj_type == "car":
                 cx, cy, cw, ch = self._get_traffic_hitbox(obj)
                 # Traffic Chassis
