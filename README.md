@@ -53,17 +53,16 @@ Classifies gestures in real time with high accuracy:
 ## Setup & Running
 
 ### Option 1: Quick Launch (Batch File)
-Double-click **`run.bat`** in File Explorer, or from PowerShell:
+From anywhere in PowerShell or CMD:
 ```powershell
-.\run.bat
+& "C:\Users\shoho\.gemini\antigravity\scratch\motion_tracker\run.bat"
 ```
+*(Or double-click **`run.bat`** in File Explorer)*
 
-### Option 2: Run via Python / Virtual Environment
+### Option 2: Run via PowerShell
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python tracker.py
+cd C:\Users\shoho\.gemini\antigravity\scratch\motion_tracker
+.\.venv\Scripts\python.exe tracker.py
 ```
 
 ### Option 3: Stream Full JSON Telemetry
@@ -71,3 +70,38 @@ python tracker.py
 python tracker.py --format json
 ```
 Outputs complete JSON packets per frame containing face coordinates, age distribution, 21 smoothed hand joints, kinematics, gesture classifications, and inter-digital vector space angles.
+
+---
+
+## 🏎️ CyberDrive: Gesture & MoCap Arcade Racing Game
+
+A complete 720p 3D-perspective arcade racing game built on top of the MoCap and Age detection pipeline!
+
+### Controls & Gesture Mechanics
+- **Virtual Steering Wheel**: Hold both hands up in the air as if gripping a steering wheel and tilt left/right. The game computes $\theta = \arctan2(\Delta y, \Delta x)$ between your wrists to turn your car with precision. (Single-hand horizontal offset also supported!)
+- **Accelerate (Gas)**: Open Palm (🖐)
+- **Brake / Reverse**: Clench Fist (✊)
+- **Nitro Boost**: Thumbs Up (👍) or Peace Sign (✌)
+- **Drift / Power Slide**: Pinch Fingers (🤏)
+- **Keyboard Fallback**: `A` / `D` or Arrow keys to steer, `W` for gas, `S` for brake, `Space` for Nitro.
+- **Restart**: Press `R` or flash an Open Palm when crashed.
+- **Exit**: Press `Q`.
+
+### Features
+- **Dynamic 3D-Perspective Highway**: Curved roads, hill crests, horizon glow, and asphalt markings.
+- **AI Traffic Vehicles**: Sports cars, muscle cars, and trucks navigating lanes.
+- **Bonus Collectibles**: Gold Coins (+100 pts), Nitro Canisters (+35% boost), and Forcefield Shields (invulnerability).
+- **Interactive Holographic Steering Wheel**: 3D-rendered steering wheel rotates dynamically with your hand tilt angle.
+- **Live MoCap PiP Driver Display**: Picture-in-picture stream displaying your face, real-time age badge, hand skeletal bones, and active gesture telemetry.
+- **Particle System**: Exhaust flames, tire smoke on drifting, and sparks on collision.
+
+### How to Run the Car Game
+```powershell
+# Quick Launch via Batch
+& "C:\Users\shoho\.gemini\antigravity\scratch\motion_tracker\run_cargame.bat"
+
+# Or via Python in terminal
+cd C:\Users\shoho\.gemini\antigravity\scratch\motion_tracker
+.\.venv\Scripts\python.exe cargame.py
+```
+

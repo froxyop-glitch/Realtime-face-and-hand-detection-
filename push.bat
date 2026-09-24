@@ -1,9 +1,10 @@
 @echo off
-title "Push to GitHub (Realtime-face-and-hand-detection-)"
+title "Push to GitHub (openCV-work)"
 cd /d "%~dp0"
+set "PATH=%PATH%;C:\Users\shoho\AppData\Local\Programs\MinGit\cmd"
 echo ===================================================
-echo Pushing Realtime Face and Hand Detection to:
-echo git@github.com:froxyop-glitch/Realtime-face-and-hand-detection-.git
+echo Pushing Motion Tracker to:
+echo https://github.com/froxyop-glitch/openCV-work
 echo ===================================================
 git push -u origin main
 echo ===================================================
